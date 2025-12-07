@@ -16,19 +16,19 @@ export class UploadService {
   async handleUpload(file: Express.Multer.File) {
     const id = randomUUID();
 
-    const originalUrl = await this.s3.upload(file.buffer, file.mimetype);
+    const { key, url } = await this.s3.upload(file.buffer, file.mimetype);
 
     this.db.set(id, {
       id,
-      originalUrl,
+      originalUrl: url,
       status: 'pending',
       processedUrl: null,
       thumbnailUrl: null,
     });
 
-    await this.queue.add('process-image', { id, originalUrl });
+    await this.queue.add('process-image', { id, key });
 
-    return { id, originalUrl };
+    return { id, originalUrl: url };
   }
 
   getStatus(id: string) {

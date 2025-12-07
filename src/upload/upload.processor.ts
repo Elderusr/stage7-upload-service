@@ -12,29 +12,34 @@ export class UploadProcessor {
   ) {}
 
   @Process('process-image')
-  async handle(job: Job<{ id: string; originalUrl: string }>) {
-    const { id, originalUrl } = job.data;
+  async handle(job: Job<{ id: string; key: string }>) {
+    const { id, key } = job.data;
 
-    this.uploadService.updateRecord(id, { status: 'processing' });
+    await this.uploadService.updateRecord(id, { status: 'processing' });
 
-    const response = await fetch(originalUrl);
-    const buffer = Buffer.from(await response.arrayBuffer());
+    const buffer = await this.s3.get(key);
 
     const processed = await sharp(buffer)
       .resize(1200)
       .jpeg({ quality: 80 })
       .toBuffer();
 
-    const processedUrl = await this.s3.upload(processed, 'image/jpeg');
+    const { url: processedUrl } = await this.s3.upload(
+      processed,
+      'image/jpeg',
+    );
 
     const thumbnail = await sharp(buffer)
       .resize(300)
       .jpeg({ quality: 70 })
       .toBuffer();
 
-    const thumbnailUrl = await this.s3.upload(thumbnail, 'image/jpeg');
+    const { url: thumbnailUrl } = await this.s3.upload(
+      thumbnail,
+      'image/jpeg',
+    );
 
-    this.uploadService.updateRecord(id, {
+    await this.uploadService.updateRecord(id, {
       status: 'done',
       processedUrl,
       thumbnailUrl,
