@@ -4,7 +4,25 @@ Here’s a professional, clear, and complete README for your **NestJS File Uploa
 
 # File Upload & Async Image Processing Service
 
-A NestJS backend service for uploading images, processing them asynchronously, storing in **MinIO**, and serving via **presigned URLs**. Background processing uses **BullMQ + Redis** for resizing and thumbnail generation.
+## Project Overview
+
+This is a NestJS application designed for asynchronous file uploading and processing. It allows users to upload files, which are then processed in the background. The application uses a queue to manage processing jobs and an object storage service to store the files.
+
+## Architecture
+
+The application is composed of three main modules:
+
+-   **Upload Module**: Handles file uploads, creates processing jobs, and provides endpoints for checking the status and results of the jobs.
+-   **Queue Module**: Manages the job queue using BullMQ and Redis.
+-   **S3 Module**: Interacts with an S3-compatible object storage service (MinIO in the local setup) to store the original and processed files.
+
+The workflow is as follows:
+
+1.  A user uploads a file through the `/upload` endpoint.
+2.  The `UploadService` uploads the original file to the S3 service.
+3.  A job is added to the `image-processing` queue.
+4.  The `UploadProcessor` picks up the job, retrieves the file from S3, processes it (resizes and compresses), and uploads the processed versions (main image and thumbnail) back to S3.
+5.  The job status is updated in the `UploadService`.
 
 ---
 
@@ -13,7 +31,7 @@ A NestJS backend service for uploading images, processing them asynchronously, s
 * Upload images via `POST /upload` (multipart/form-data).
 * Async image processing (resize / thumbnail) with BullMQ.
 * Store images in MinIO (S3-compatible storage).
-* Serve images securely through presigned URLs at `GET /files/:key`.
+
 * Fully containerized with Docker (MinIO + Redis).
 * TypeScript, NestJS, and AWS SDK v3 ready.
 
@@ -22,8 +40,8 @@ A NestJS backend service for uploading images, processing them asynchronously, s
 ## Requirements
 
 * Node.js ≥ 18
-* Docker & Docker Compose
-* npm
+* pnpm
+* Docker
 
 ---
 
@@ -39,7 +57,7 @@ cd file-upload-service
 2. Install dependencies:
 
 ```bash
-npm install
+pnpm install
 ```
 
 3. Create a `.env` file based on `.env.example`:
@@ -79,24 +97,12 @@ docker-compose up -d
   * Username: `minio`
   * Password: `minio123`
 
-### 2. Create the `uploads` bucket
 
-```bash
-docker exec -it upload_minio sh
-mc alias set local http://localhost:9000 minio minio123
-mc mb local/uploads
-mc anonymous set download local/uploads
-```
-
-This makes the bucket publicly readable.
-
----
 
 ### 3. Start the NestJS server
 
 ```bash
-npm run start:dev
-```
+pnpm run start:dev```
 
 Server runs at `http://localhost:3000`.
 
@@ -104,46 +110,36 @@ Server runs at `http://localhost:3000`.
 
 ## API Endpoints
 
-### 1. **Upload File**
+-   `POST /upload`: Uploads a file. The file should be sent as a multipart/form-data with the key `file`.
 
-**POST /upload**
+    **Curl Example:**
 
-* Form field: `file`
-* Response:
+    ```bash
+    curl -X POST http://localhost:3000/upload \
+      -F "file=@/path/to/image.jpg"
+    ```
 
-```json
-{
-  "key": "uploads/550e8400-e29b-41d4-a716-446655440000.jpg",
-  "url": "http://localhost:3000/files/uploads/550e8400-e29b-41d4-a716-446655440000.jpg"
-}
-```
+-   `GET /upload/:id/status`: Gets the status of a processing job.
 
-**Curl Example:**
+    **Curl Example:**
 
-```bash
-curl -X POST http://localhost:3000/upload \
-  -F "file=@/path/to/image.jpg"
-```
+    ```bash
+    curl http://localhost:3000/upload/job-id-here/status
+    ```
 
----
+-   `GET /upload/:id/result`: Gets the result of a processing job, including the URLs of the processed files.
 
-### 2. **Access File**
+    **Curl Example:**
 
-**GET /files/:key**
-
-* Returns a **redirect to a presigned MinIO URL** valid for 1 hour.
-
-**Curl Example:**
-
-```bash
-curl -L http://localhost:3000/files/uploads/550e8400-e29b-41d4-a716-446655440000.jpg --output downloaded.jpg
-```
+    ```bash
+    curl http://localhost:3000/upload/job-id-here/result
+    ```
 
 ---
 
 ## Background Processing
 
-* Queue: `image-queue` (BullMQ)
+* Queue: `image-processing` (BullMQ)
 * Task: `optimize` — create thumbnails or resize images.
 * Logs show processing progress:
 
@@ -156,7 +152,7 @@ Processing uploads/550e8400-e29b-41d4-a716-446655440000.jpg, creating thumbnail 
 ## Development
 
 * Use **TypeScript + NestJS** conventions.
-* Hot reload: `npm run start:dev`.
+* pnpm run start:dev
 * Worker runs as part of NestJS app (BullMQ processors).
 
 ---
@@ -172,16 +168,24 @@ Processing uploads/550e8400-e29b-41d4-a716-446655440000.jpg, creating thumbnail 
 
 ```
 src/
-├─ file-upload/
-│  ├─ file-upload.module.ts
-│  ├─ file-upload.service.ts
-│  ├─ file-upload.controller.ts
-│  └─ file.processor.ts
+├───entities/
+│   └───upload.entity.ts
+├───queue/
+│   └───queue.module.ts
+├───s3/
+│   ├───s3.module.ts
+│   └───s3.service.ts
+└───upload/
+    ├───upload.controller.ts
+    ├───upload.module.ts
+    ├───upload.processor.ts
+    └───upload.service.ts
 ```
 
-* `file-upload.service.ts` → Handles MinIO uploads & queueing
-* `file.processor.ts` → Handles async processing (resize / thumbnail)
-* `file-upload.controller.ts` → Upload + file access endpoints
+* `upload.service.ts`: Handles file uploads, creates processing jobs, and provides endpoints for checking the status and results of the jobs.
+* `upload.processor.ts`: Picks up jobs from the queue, retrieves files from S3, processes them, and uploads processed versions back to S3.
+* `upload.controller.ts`: Provides the HTTP endpoints for file uploads and job status/result retrieval.
+* `s3.service.ts`: Interacts with the S3-compatible object storage service.
 
 ---
 
